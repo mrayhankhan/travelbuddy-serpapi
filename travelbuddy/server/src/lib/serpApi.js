@@ -28,7 +28,7 @@ const ENDPOINT = "https://serpapi.com/search.json";
 const CACHE_TTL_MS = 48 * 60 * 60 * 1000;
 const DAILY_CAP = Number(process.env.SERPAPI_DAILY_CAP) || 40;
 const MONTHLY_CAP = Number(process.env.SERPAPI_MONTHLY_CAP) || 230;
-const CACHE_FILE = path.resolve(__dirname, "../../.cache/serpapi.json");
+const CACHE_FILE = process.env.SERP_CACHE_FILE || path.resolve(__dirname, "../../.cache/serpapi.json");
 
 let SNAPSHOTS = {};
 try {
@@ -40,24 +40,32 @@ try {
 const serpConfigured = () => Boolean(process.env.SERPAPI_API_KEY);
 
 // ── cache and credit budget ─────────────────────────────────────────────────
+//
+// The cache and the credit counters live in one of two places behind the same
+// four calls (get, put, spend, usage):
+//
+//   disk     the default. One machine, survives restarts.
+//   mongodb  SERP_STORE=mongo. Shared by every serverless instance. On a public
+//            deployment this is the only way a daily cap is really a cap,
+//            because each instance would otherwise count on its own.
 
-let store = null;
+let diskState = null;
 function load() {
-  if (store) return store;
+  if (diskState) return diskState;
   try {
-    store = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+    diskState = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
   } catch {
-    store = { cache: {}, used: {} };
+    diskState = { cache: {}, used: {} };
   }
-  store.cache = store.cache || {};
-  store.used = store.used || {};
-  return store;
+  diskState.cache = diskState.cache || {};
+  diskState.used = diskState.used || {};
+  return diskState;
 }
 
 function save() {
   try {
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(store));
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(diskState));
   } catch {
     /* read-only filesystem: the memory copy still works for this run */
   }
@@ -69,28 +77,89 @@ function istStamp() {
   return { day: ist.slice(0, 10), month: ist.slice(0, 7) };
 }
 
-function reserveCredit() {
-  const s = load();
-  const { day, month } = istStamp();
-  const d = s.used[day] || 0;
-  const m = s.used[month] || 0;
-  if (d >= DAILY_CAP || m >= MONTHLY_CAP) return false;
-  s.used[day] = d + 1;
-  s.used[month] = m + 1;
-  save();
-  return true;
-}
+const diskStore = {
+  async get(key) {
+    return load().cache[key] || null;
+  },
+  async put(key, entry) {
+    load().cache[key] = entry;
+    save();
+  },
+  /** Take one credit if both caps allow it. */
+  async spend() {
+    const s = load();
+    const { day, month } = istStamp();
+    const d = s.used[day] || 0;
+    const m = s.used[month] || 0;
+    if (d >= DAILY_CAP || m >= MONTHLY_CAP) return false;
+    s.used[day] = d + 1;
+    s.used[month] = m + 1;
+    save();
+    return true;
+  },
+  async usage() {
+    const s = load();
+    const { day, month } = istStamp();
+    return { today: s.used[day] || 0, month: s.used[month] || 0, cached: Object.keys(s.cache).length };
+  },
+};
 
-function serpUsage() {
-  const s = load();
-  const { day, month } = istStamp();
+let ttlIndexReady = null;
+const mongoStore = {
+  collections() {
+    const conn = require("mongoose").connection;
+    return { cache: conn.collection("serp_cache"), used: conn.collection("serp_usage") };
+  },
+  async get(key) {
+    const { cache } = this.collections();
+    // Mongo deletes expired entries itself; the age check in search() covers the gap.
+    ttlIndexReady = ttlIndexReady || cache.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
+    await ttlIndexReady;
+    return cache.findOne({ _id: key });
+  },
+  async put(key, entry) {
+    const { cache } = this.collections();
+    await cache.replaceOne({ _id: key }, { ...entry, expireAt: new Date(entry.at + CACHE_TTL_MS) }, { upsert: true });
+  },
+  async spend() {
+    const { used } = this.collections();
+    const { day, month } = istStamp();
+    // $inc is atomic, so two instances cannot both take the last credit.
+    const bump = async (id, n) => {
+      const r = await used.findOneAndUpdate({ _id: id }, { $inc: { n } }, { upsert: true, returnDocument: "after" });
+      return (r && (r.n !== undefined ? r.n : r.value && r.value.n)) || 0;
+    };
+    if ((await bump("day:" + day, 1)) > DAILY_CAP) {
+      await bump("day:" + day, -1);
+      return false;
+    }
+    if ((await bump("month:" + month, 1)) > MONTHLY_CAP) {
+      await bump("month:" + month, -1);
+      await bump("day:" + day, -1);
+      return false;
+    }
+    return true;
+  },
+  async usage() {
+    const { cache, used } = this.collections();
+    const { day, month } = istStamp();
+    const [d, m, cached] = await Promise.all([used.findOne({ _id: "day:" + day }), used.findOne({ _id: "month:" + month }), cache.countDocuments()]);
+    return { today: (d && d.n) || 0, month: (m && m.n) || 0, cached };
+  },
+};
+
+const store = () => (process.env.SERP_STORE === "mongo" ? mongoStore : diskStore);
+
+async function serpUsage() {
+  const u = await store().usage();
   return {
     configured: serpConfigured(),
-    today: s.used[day] || 0,
-    month: s.used[month] || 0,
+    store: process.env.SERP_STORE === "mongo" ? "mongodb" : "disk",
+    today: u.today,
+    month: u.month,
     dailyCap: DAILY_CAP,
     monthlyCap: MONTHLY_CAP,
-    cachedSearches: Object.keys(s.cache).length,
+    cachedSearches: u.cached,
     savedHotels: Object.keys(SNAPSHOTS.hotels || {}).length,
     savedFlights: Object.keys(SNAPSHOTS.flights || {}).length,
     savedCapturedAt: SNAPSHOTS.capturedAt || null,
@@ -120,23 +189,35 @@ async function callSerpApi(params) {
  * One search through cache -> credits -> network. 'reduce' trims the response
  * to the fields we use, so the cache stays small and a cached answer is
  * exactly what a live one would have returned.
+ *
+ * Two identical searches at the same moment share one request. If the store
+ * cannot be reached the search is skipped rather than made, because a search
+ * that cannot be counted is a search that cannot be capped.
  */
-async function search(kind, keyParts, params, reduce) {
-  const s = load();
+const inflight = new Map();
+
+function search(kind, keyParts, params, reduce) {
   const key = kind + ":" + crypto.createHash("sha1").update(keyParts.join("|")).digest("hex").slice(0, 16);
-  const hit = s.cache[key];
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    return { data: hit.data, provenance: "cached", fetchedAt: new Date(hit.at).toISOString() };
-  }
-  if (serpConfigured() && reserveCredit()) {
-    try {
-      const data = reduce(await callSerpApi(params));
-      s.cache[key] = { at: Date.now(), data };
-      save();
-      return { data, provenance: "live", fetchedAt: new Date().toISOString() };
-    } catch (err) {
-      console.warn("[serpapi] " + kind + " search failed: " + err.message);
+  if (inflight.has(key)) return inflight.get(key);
+  const run = searchOnce(key, kind, params, reduce).finally(() => inflight.delete(key));
+  inflight.set(key, run);
+  return run;
+}
+
+async function searchOnce(key, kind, params, reduce) {
+  const st = store();
+  try {
+    const hit = await st.get(key);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      return { data: hit.data, provenance: "cached", fetchedAt: new Date(hit.at).toISOString() };
     }
+    if (serpConfigured() && (await st.spend())) {
+      const data = reduce(await callSerpApi(params));
+      await st.put(key, { at: Date.now(), data });
+      return { data, provenance: "live", fetchedAt: new Date().toISOString() };
+    }
+  } catch (err) {
+    console.warn("[serpapi] " + kind + " search failed: " + err.message);
   }
   return null;
 }
@@ -706,5 +787,5 @@ module.exports = {
   fetchHotelData,
   fetchFlightData,
   // Pure helpers, exported for the unit tests.
-  _internals: { pickBest, reduceFlights, rankHotels, sized, to24h },
+  _internals: { pickBest, reduceFlights, rankHotels, sized, to24h, search, diskStore, mongoStore },
 };

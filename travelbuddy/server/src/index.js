@@ -31,8 +31,12 @@ app.use('/api/photo', require('./routes/photo'));
 app.use('/api/auth-backend', require('./routes/auth'));
 
 // SerpApi credit usage: how much of the cap is spent, and what is saved.
-app.get('/api/serpapi/usage', (req, res) => {
-    res.json(require('./lib/serpApi').serpUsage());
+app.get('/api/serpapi/usage', async (req, res) => {
+    try {
+        res.json(await require('./lib/serpApi').serpUsage());
+    } catch (err) {
+        res.status(503).json({ error: 'Usage is unavailable: ' + err.message });
+    }
 });
 
 // Chatbot route (Gemini-powered travel assistant)
@@ -68,15 +72,25 @@ try {
     console.warn('    AI-written itineraries, the chatbot and photo analysis are off; everything else runs.');
 }
 
-mongoose.connect(MONGODB_URI)
-    .then(() => {
-        console.log('✅ Connected to MongoDB');
-        app.listen(PORT, () => {
-            console.log(`🚀 TravelBuddy API running on port ${PORT}`);
-            console.log(`   Health: http://localhost:${PORT}/api/health`);
+if (process.env.VERCEL) {
+    // Serverless: no port to listen on. Mongoose queues queries until the
+    // connection is up, and the connection is reused while the instance is warm.
+    mongoose.connect(MONGODB_URI).then(
+        () => console.log('✅ Connected to MongoDB'),
+        err => console.error('❌ MongoDB connection error:', err.message),
+    );
+    module.exports = app;
+} else {
+    mongoose.connect(MONGODB_URI)
+        .then(() => {
+            console.log('✅ Connected to MongoDB');
+            app.listen(PORT, () => {
+                console.log(`🚀 TravelBuddy API running on port ${PORT}`);
+                console.log(`   Health: http://localhost:${PORT}/api/health`);
+            });
+        })
+        .catch(err => {
+            console.error('❌ MongoDB connection error:', err.message);
+            process.exit(1);
         });
-    })
-    .catch(err => {
-        console.error('❌ MongoDB connection error:', err.message);
-        process.exit(1);
-    });
+}

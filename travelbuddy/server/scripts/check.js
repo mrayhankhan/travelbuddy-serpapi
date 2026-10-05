@@ -43,7 +43,7 @@ const bad = (m) => console.log("  ❌ " + m);
       failed = true;
     }
   }
-  const u = serpUsage();
+  const u = await serpUsage();
   ok("saved responses: " + u.savedHotels + " hotel sets, " + u.savedFlights + " flight sets" + (u.savedCapturedAt ? " (captured " + u.savedCapturedAt.slice(0, 10) + ")" : ""));
   ok("this server has spent " + u.month + " credits this month (caps " + u.dailyCap + "/day, " + u.monthlyCap + "/month)");
 

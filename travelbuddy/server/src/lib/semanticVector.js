@@ -11,7 +11,7 @@
 const path = require('path');
 
 // ── Load tag embeddings once at module init ─────────────────────────────
-const embeddingsPath = path.resolve(__dirname, '..', '..', '..', 'tagEmbeddings.json');
+const embeddingsPath = path.resolve(__dirname, '..', 'data', 'tagEmbeddings.json');
 let TAG_EMBEDDINGS = {};
 let EMBEDDING_DIM = 768;
 

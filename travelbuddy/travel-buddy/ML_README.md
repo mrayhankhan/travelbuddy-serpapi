@@ -68,7 +68,7 @@ Both are updated on every swipe. The dense vectors represent *meaning* in embedd
 
 ## 🔡 The Tag Embedding Foundation
 
-**File:** `tagEmbeddings.json` (loaded at server startup AND bundled into the frontend)  
+**File:** `server/src/data/tagEmbeddings.json` (loaded at server startup AND bundled into the frontend)  
 **Model:** `sentence-transformers/all-MiniLM-L6-v2`  
 **Dimension:** 768-dim Float64 per tag
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const embeddingsPath = path.resolve(__dirname, 'tagEmbeddings.json');
+const embeddingsPath = path.resolve(__dirname, 'server', 'src', 'data', 'tagEmbeddings.json');
 const embeddings = require(embeddingsPath);
 
 function averageVectors(vecArr) {
