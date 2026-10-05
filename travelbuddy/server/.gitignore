@@ -4,3 +4,4 @@ node_modules
 
 # SerpApi response cache and credit counters (runtime state)
 .cache/
+.vercel

@@ -1,0 +1,7 @@
+# Never upload local secrets or runtime state with a deployment.
+.env
+.env.*
+!.env.example
+.cache
+.vercel
+node_modules

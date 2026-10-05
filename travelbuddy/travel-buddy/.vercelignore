@@ -1,0 +1,7 @@
+# Never upload local secrets or build output with a deployment.
+.env
+.env.*
+!.env.local.example
+.next
+node_modules
+.vercel
