@@ -33,12 +33,18 @@
 /* =============================================
    RESET & BASE
    ============================================= */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  -webkit-tap-highlight-color: transparent;
+/* This reset must live in @layer base. Tailwind v4 puts its utilities in
+   @layer utilities, and an unlayered rule beats a layered one whatever its
+   specificity, so an unlayered "* { margin: 0 }" switches off every margin
+   utility in the app (mx-auto, mt-*, mb-*...). */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 html {
@@ -202,4 +208,4 @@ input[type="range"]::-moz-range-thumb {
 @keyframes mustDoShimmer {
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
-}
+}
