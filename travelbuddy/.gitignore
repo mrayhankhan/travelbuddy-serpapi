@@ -1,0 +1,25 @@
+*.DS_Store
+
+# Environment variables — never commit these
+.env
+.env.local
+.env*.local
+
+# Node modules
+node_modules/
+server/node_modules/
+travel-buddy/node_modules/
+travel-buddy/.next/
+
+# Test/scratch files created during API exploration
+server/test-*.js
+server/*.json
+server/*.xml
+server/*.txt
+server/wsdl.*
+server/parse-*.js
+
+# Build output
+.next/
+dist/
+build/
