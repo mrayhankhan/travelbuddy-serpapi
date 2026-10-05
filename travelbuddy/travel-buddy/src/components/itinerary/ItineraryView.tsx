@@ -678,7 +678,19 @@ export default function ItineraryView({
                 </span>
               </div>
 
-              <p className="text-[10px] text-[#8E8E93]/50 text-center">Fares from Google Flights via SerpApi · priced for the whole party</p>
+              {flights[0]?.priceInsight?.typical && (
+                <div className="rounded-xl bg-[#FFFBEA] px-3 py-2 text-center">
+                  <p className="text-[11px] font-semibold text-[#B8860B]">
+                    Typical fare on this route: ₹{Number(flights[0].priceInsight.typical[0]).toLocaleString('en-IN')} – ₹{Number(flights[0].priceInsight.typical[1]).toLocaleString('en-IN')} per person
+                  </p>
+                  {flights[0].priceInsight.level && (
+                    <p className="text-[10px] text-[#8E8E93]">This search is {String(flights[0].priceInsight.level)} for the dates</p>
+                  )}
+                </div>
+              )}
+              <p className="text-[10px] text-[#8E8E93]/50 text-center">
+                {flights[0]?.provenance === 'saved' ? 'Saved example · ' : ''}Fares from Google Flights via SerpApi · priced for the whole party
+              </p>
 
               {/* ── Flight Detail Bottom Sheet ── */}
               <AnimatePresence>

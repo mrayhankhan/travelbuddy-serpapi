@@ -40,6 +40,12 @@ export interface FlightInfo {
   baggage?: string;
   cabinBaggage?: string;
   isRefundable?: boolean;
+  /** Where live fares came from. Present once SerpApi has answered. */
+  source?: 'serpapi';
+  provenance?: 'live' | 'cached' | 'saved';
+  /** Google Flights' view of the route: per-person range and how this search compares. */
+  priceInsight?: { lowest?: number; level?: string; typical?: [number, number] } | null;
+  [extra: string]: unknown;
 }
 
 export interface HotelInfo {
@@ -50,6 +56,10 @@ export interface HotelInfo {
   totalCost: number;
   image: string;
   nights: number;
+  /** Where the live rate came from. Present once SerpApi has answered. */
+  source?: 'serpapi';
+  provenance?: 'live' | 'cached' | 'saved';
+  [extra: string]: unknown;
 }
 
 export interface TransferInfo {

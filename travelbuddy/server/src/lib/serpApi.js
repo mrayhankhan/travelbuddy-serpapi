@@ -171,14 +171,35 @@ function to24h(t, fallback) {
 // ── hotels ──────────────────────────────────────────────────────────────────
 
 /**
- * SerpApi returns hotel photos at full resolution (often 4,000px, over a
- * megabyte each). Google's image host resizes on request when the size
- * parameter it already carries is replaced, so ask for a phone-sized image.
+ * SerpApi returns hotel photos at full resolution (often 2,000-4,000px and
+ * over a megabyte each), from a dozen different image CDNs. Show a phone-sized
+ * version where the host supports resizing; leave the rest alone, since most
+ * of those are already small. Applied when a hotel is built, not when it is
+ * cached, so saved responses keep the original URLs.
  */
 function sized(url, width) {
-  if (!url || !/googleusercontent\.com/.test(url)) return url;
-  return url.replace(/=[swh]\d+.*$/, "") + "=w" + width;
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (/googleusercontent\.com$/.test(u.host)) return url.replace(/=[swh]\d+.*$/, "") + "=w" + width;
+    if (/tripadvisor\.com$/.test(u.host)) {
+      u.searchParams.set("w", String(width));
+      u.searchParams.set("h", String(Math.round((width * 2) / 3)));
+      return u.toString();
+    }
+    if (/(trvl-media|vrbo)\.com$/.test(u.host)) {
+      u.searchParams.set("impolicy", "resizecrop");
+      u.searchParams.set("rw", String(width));
+      u.searchParams.set("ra", "fit");
+      return u.toString();
+    }
+  } catch {
+    /* not a URL we can parse: use it as given */
+  }
+  return url;
 }
+
+const round1 = (n) => (typeof n === "number" ? Math.round(n * 10) / 10 : n);
 
 function reduceHotels(json) {
   return (json.properties || [])
@@ -197,7 +218,7 @@ function reduceHotels(json) {
       checkOutTime: p.check_out_time,
       description: p.description,
       amenities: p.amenities || [],
-      images: (p.images || []).slice(0, 6).map((i) => sized(i.original_image || i.thumbnail, 800)).filter(Boolean),
+      images: (p.images || []).slice(0, 6).map((i) => i.original_image || i.thumbnail).filter(Boolean),
       gps: p.gps_coordinates,
       link: p.link,
       token: p.property_token,
@@ -300,6 +321,28 @@ function rankHotels(hotels, targetBudget, userPreferences) {
   return scored.slice(0, 3).map((h, i) => ({ ...h, rankBadge: BADGES[i] }));
 }
 
+/** The hotel search itself, shared by searchHotels and the snapshot script. */
+async function fetchHotelData(destinationName, checkIn, checkOut) {
+  const key = String(destinationName).toLowerCase().trim();
+  // Always priced for two adults in a room, then scaled by rooms, so one
+  // search serves every party size.
+  return search(
+    "hotels",
+    ["v2", key, checkIn, checkOut],
+    {
+      engine: "google_hotels",
+      q: "Hotels in " + titleCase(destinationName),
+      check_in_date: checkIn,
+      check_out_date: checkOut,
+      adults: "2",
+      currency: "INR",
+      gl: "in",
+      hl: "en",
+    },
+    reduceHotels,
+  );
+}
+
 async function searchHotels(destinationName, checkIn, checkOut, noOfRooms, noOfAdults, targetBudget = null, userPreferences = null) {
   try {
     const key = String(destinationName).toLowerCase().trim();
@@ -307,23 +350,7 @@ async function searchHotels(destinationName, checkIn, checkOut, noOfRooms, noOfA
     const nights = getNumNights(checkIn, checkOut);
     const rooms = Math.max(1, noOfRooms || 1);
 
-    // Always priced for two adults in a room, then scaled by rooms, so one
-    // search serves every party size.
-    let result = await search(
-      "hotels",
-      ["v2", key, checkIn, checkOut],
-      {
-        engine: "google_hotels",
-        q: "Hotels in " + cityName,
-        check_in_date: checkIn,
-        check_out_date: checkOut,
-        adults: "2",
-        currency: "INR",
-        gl: "in",
-        hl: "en",
-      },
-      reduceHotels,
-    );
+    let result = await fetchHotelData(destinationName, checkIn, checkOut);
     if (!result || !result.data.length) {
       const saved = (SNAPSHOTS.hotels || {})[key];
       if (saved) result = { data: saved.data, provenance: "saved", fetchedAt: saved.fetchedAt };
@@ -333,18 +360,18 @@ async function searchHotels(destinationName, checkIn, checkOut, noOfRooms, noOfA
       return null;
     }
 
-    const stayNights = result.provenance === "saved" ? nights : nights;
+    const stayNights = nights;
     const hotels = result.data
       .map((p) => {
         const base = p.total || (p.perNight ? p.perNight * nights : 0);
         if (!base) return null;
-        const images = p.images && p.images.length ? p.images : [];
+        const images = (p.images || []).map((u) => sized(u, 800));
         return {
           name: p.name,
-          rating: p.rating || p.starClass || 4,
+          rating: round1(p.rating || p.starClass || 4),
           starRating: p.starClass,
           reviews: p.reviews,
-          locationRating: p.locationRating,
+          locationRating: round1(p.locationRating),
           location: cityName,
           address: cityName,
           distanceToCenter: p.nearby && p.nearby[0] ? p.nearby[0].name + (p.nearby[0].duration ? " - " + p.nearby[0].duration : "") : "",
@@ -604,6 +631,21 @@ function formatFlight(option, kind, costPerLeg) {
   };
 }
 
+/** Outbound search, then the return leg for the chosen outbound. */
+async function fetchFlightData(origin, destAirport, checkInDate, checkOutDate) {
+  // SerpApi prices the whole party in one number. Searching for one adult
+  // and multiplying keeps one cached search valid for every party size.
+  const base = { engine: "google_flights", departure_id: origin, arrival_id: destAirport, outbound_date: checkInDate, return_date: checkOutDate, currency: "INR", gl: "in", hl: "en", adults: "1", type: "1" };
+  const out = await search("flights", ["v2", origin, destAirport, checkInDate, checkOutDate], base, reduceFlights);
+  if (!out || !out.data.options.length) return null;
+  const best = pickBest(out.data.options);
+  let ret = null;
+  if (best.token) {
+    ret = await search("flights-return", ["v2", origin, destAirport, checkInDate, checkOutDate, best.token], { ...base, departure_token: best.token }, reduceFlights);
+  }
+  return { out, ret };
+}
+
 async function getLiveFlights(originCode, destinationName, checkInDate, checkOutDate, adults = 1, childCount = 0, targetBudget = null) {
   try {
     const origin = originCode || "DEL";
@@ -613,28 +655,20 @@ async function getLiveFlights(originCode, destinationName, checkInDate, checkOut
       return null;
     }
 
-    // SerpApi prices the whole party in one number. Searching for one adult
-    // and multiplying keeps one cached search valid for every party size.
-    const base = { engine: "google_flights", departure_id: origin, arrival_id: destAirport, outbound_date: checkInDate, return_date: checkOutDate, currency: "INR", gl: "in", hl: "en", adults: "1", type: "1" };
-
-    let out = await search("flights", ["v2", origin, destAirport, checkInDate, checkOutDate], base, reduceFlights);
-    let ret = null;
-    let saved = null;
-
-    if (!out || !out.data.options.length) {
-      saved = (SNAPSHOTS.flights || {})[origin + "-" + destAirport] || null;
+    let found = await fetchFlightData(origin, destAirport, checkInDate, checkOutDate);
+    if (!found) {
+      const saved = (SNAPSHOTS.flights || {})[origin + "-" + destAirport];
       if (!saved) {
         console.log("[serpapi] no flights " + origin + " -> " + destAirport + " - using seed data");
         return null;
       }
-      out = { data: saved.outbound, provenance: "saved", fetchedAt: saved.fetchedAt };
-      ret = { data: saved.inbound, provenance: "saved", fetchedAt: saved.fetchedAt };
+      found = {
+        out: { data: saved.outbound, provenance: "saved", fetchedAt: saved.fetchedAt },
+        ret: { data: saved.inbound, provenance: "saved", fetchedAt: saved.fetchedAt },
+      };
     }
-
+    const { out, ret } = found;
     const best = pickBest(out.data.options);
-    if (!ret && best.token) {
-      ret = await search("flights-return", ["v2", origin, destAirport, checkInDate, checkOutDate, best.token], { ...base, departure_token: best.token }, reduceFlights);
-    }
 
     const pax = Math.max(1, (adults || 1) + (childCount || 0));
     const total = best.price * pax;
@@ -662,4 +696,15 @@ async function getLiveFlights(originCode, destinationName, checkInDate, checkOut
   }
 }
 
-module.exports = { searchHotels, getLiveFlights, getDatesForDuration, AIRPORT_CODE_MAP, serpUsage, serpConfigured };
+module.exports = {
+  searchHotels,
+  getLiveFlights,
+  getDatesForDuration,
+  AIRPORT_CODE_MAP,
+  serpUsage,
+  serpConfigured,
+  fetchHotelData,
+  fetchFlightData,
+  // Pure helpers, exported for the unit tests.
+  _internals: { pickBest, reduceFlights, rankHotels, sized, to24h },
+};
