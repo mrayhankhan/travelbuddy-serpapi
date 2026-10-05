@@ -8,11 +8,11 @@
 
 ## 🌍 Product Summary
 
-TravelBuddy is an innovative, swipe-based AI travel discovery engine — colloquially conceived as "Tinder for the complete travel itinerary." Born out of the HotelAPI Hackathon, the platform fundamentally disrupts the traditional form-heavy, filter-driven travel booking paradigm.
+TravelBuddy is an innovative, swipe-based AI travel discovery engine — colloquially conceived as "Tinder for the complete travel itinerary." Born out of an earlier travel-API hackathon and rebuilt on live SerpApi data, the platform fundamentally disrupts the traditional form-heavy, filter-driven travel booking paradigm.
 
 Instead of demanding users to immediately know where they want to go, TravelBuddy gamifies the discovery phase. Users swipe through visually immersive cards representing abstract "Vibes," specific "Activities," and varied "Stays." As the user swipes — swiping right for Like, left for Skip, or interacting for a Wishlist/Expand — an intelligent Machine Learning engine works silently in the background. It constructs a multi-dimensional semantic preference vector unique to the user's implicit desires.
 
-Leveraging a vast database of European destinations and integrating directly with HotelAPI's live Hotel APIs, the system uses cosine similarity algorithms to match the user's hidden profile with the perfect destination. The result is a hyper-personalized, fully generated day-by-day itinerary powered by Google Gemini 2.5 Flash, complete with real-time hotel pricing, scaled activity budgets, simulated flight routes, and interactive Google Street View integrations. 
+Leveraging a vast database of European destinations and pulling live hotels and flights from Google through SerpApi, the system uses cosine similarity algorithms to match the user's hidden profile with the perfect destination. The result is a hyper-personalized, fully generated day-by-day itinerary powered by Google Gemini 2.5 Flash, complete with live hotel rates, live flight fares with real layovers, scaled activity budgets, and interactive Google Street View integrations. 
 
 In under 60 seconds, a user goes from a vague desire to travel, to holding a fully budgeted, personalized, interactive, and visually stunning itinerary in their hands—ready to be booked.
 
@@ -35,7 +35,7 @@ In under 60 seconds, a user goes from a vague desire to travel, to holding a ful
   1. **Vibes** (e.g., "Zen", "Party", "Historic")
   2. **Activities** (e.g., "Scuba Diving", "Museums", "Food Tours")
   3. **Stays** (e.g., "Luxury Resor", "Hostels", "Boutique Art Hotels")
-* **Rich Content Cards:** 46 distinct, high-quality discovery cards backed by Unsplash imagery and multi-bullet highlights.
+* **Rich Content Cards:** 66 distinct, high-quality discovery cards (20 vibes, 28 activities, 18 stays) backed by Unsplash imagery and multi-bullet highlights.
 
 ### 3. Semantic Preference Profiling (Machine Learning)
 * **Real-time Semantic Vectors:** Every card contains 6 hidden ML tags. Each swipe updates a 768-dimensional dense vector (User Vibe, User Activity, User Stay) in real-time.
@@ -61,9 +61,9 @@ In under 60 seconds, a user goes from a vague desire to travel, to holding a ful
 * **Automatic Budget Pruning:** If the AI-generated trip exceeds the user's strict budget, an internal algorithm silently loops through and selectively prunes the most expensive non-essential activities until the trip turns "Green" (within budget).
 
 ### 7. Live API Integrations
-* **HotelAPI Holiday Hotel API:** Directly integrated with HotelAPI's B2B REST APIs.
-* **Live Pricing & Conversion:** Fetches live hotel availability and the absolute cheapest room rates for the user's dates in USD, dynamically converting them to INR.
-* **Graceful Fallbacks:** If HotelAPI API fails, times out, or has no inventory for a lesser-known city, the system seamlessly inserts rich fallback seed data without breaking the UI.
+* **Google Hotels and Google Flights, via SerpApi:** one search per hotel list, one for the outbound flights and one for the return.
+* **Live pricing in rupees:** Requests prices for the user's dates in INR directly, ranks hotels on preference, price, rating, location and review volume, and picks the flight with the lowest price once travel time is counted.
+* **Graceful Fallbacks:** Responses are cached for 48 hours and credit-capped; with no key, or once a cap is reached, saved real responses are served and labelled as saved, and a route with none falls back to seed data without breaking the UI.
 * **Dynamic Cost Scaling:** Flight costs are scaled strictly by total travelers. Hotel rooms are automatically calculated via `ceil(travelers / 2)`. Group transfer costs are appropriately expanded.
 
 ### 8. Interactive Maps & Location Services

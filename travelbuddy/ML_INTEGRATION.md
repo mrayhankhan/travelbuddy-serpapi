@@ -39,7 +39,7 @@ function scoreDestination(userVector, destinationVector) {
 
 | File | Owner | Why |
 |---|---|---|
-| `server/src/lib/hotelClient.js` | API team | HotelAPI hotel integration — completely separate |
+| `server/src/lib/serpApi.js` | API team | SerpApi hotel and flight integration — completely separate |
 | `server/src/routes/destination.js` | API team | Calls `scoring.js` but you don't need to modify it |
 | `server/src/routes/session.js` | API team | Session management |
 | `server/src/models/` | API team | MongoDB schemas |

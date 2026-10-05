@@ -113,7 +113,7 @@ function mapToObj(m) {
 - **`POST /api/preferences/sync`**: Syncs user's curated ProfileDrawer tags to the session.
 - **`POST /api/preferences/remove-tag`**: Removes a specific tag from the user's profile.
 - **`POST /api/destinations/shortlist`**: Calls `rankDestinations()`.
-- **`POST /api/destinations/itinerary/generate`**: Calls `adjustItineraryCosts()`, `personalizeItinerary()` (micro-personalizes daily activity order), and injects live HotelAPI hotel data.
+- **`POST /api/destinations/itinerary/generate`**: Calls `adjustItineraryCosts()`, `personalizeItinerary()` (micro-personalizes daily activity order), and injects live SerpApi hotel and flight data.
 
 ---
 

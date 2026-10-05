@@ -411,7 +411,7 @@ The "Ready Trips" feed. Shows 3 AI-generated itinerary cards. Manages the module
 ```typescript
 // Defined OUTSIDE the React component so they survive unmounts
 export const aiPromiseMap = new Map<string, Promise<any>>();
-export const hotelApiPromiseMap = new Map<string, Promise<any>>();
+export const stayPromiseMap = new Map<string, Promise<any>>();
 let cachedItineraries: any[] | null = null; // feed-level cache
 let feedPromiseCache: Promise<any> | null = null; // deduplicates the initial feed fetch
 ```
@@ -432,12 +432,12 @@ useEffect(() => {
     return;
   }
   
-  // Fire AI and HotelAPI fetches simultaneously
+  // Fire the AI and the SerpApi (Google Hotels + Flights) fetches simultaneously
   const aiPromise = generateItineraryAIFromAPI(sessionId, destId);
   aiPromiseMap.set(destId, aiPromise);
   
-  const hotelApiPromise = generateItineraryHotelAPIFromAPI(sessionId, destId);
-  hotelApiPromiseMap.set(destId, hotelApiPromise);
+  const stayPromise = generateItineraryStayFromAPI(sessionId, destId);
+  stayPromiseMap.set(destId, stayPromise);
   
   // Only advance to next card AFTER current AI call settles
   aiPromise.finally(() => setPrefetchIndex(i => i + 1));
@@ -454,8 +454,8 @@ async function handleViewFull(card) {
   if (!aiPromiseMap.has(destId)) {
     aiPromiseMap.set(destId, generateItineraryAIFromAPI(sessionId, destId));
   }
-  if (!hotelApiPromiseMap.has(destId)) {
-    hotelApiPromiseMap.set(destId, generateItineraryHotelAPIFromAPI(sessionId, destId));
+  if (!stayPromiseMap.has(destId)) {
+    stayPromiseMap.set(destId, generateItineraryStayFromAPI(sessionId, destId));
   }
   
   setLoadingDetailsFor(destId); // show skeleton
@@ -470,27 +470,27 @@ async function handleViewFull(card) {
 ## `src/components/itinerary/ItineraryView.tsx` (~83KB, largest file)
 
 ### What it does
-The full itinerary display. Renders the AI day-by-day plan immediately, then progressively hydrates flight and hotel data from the HotelAPI API as it arrives.
+The full itinerary display. Renders the AI day-by-day plan immediately, then progressively hydrates flight and hotel data from SerpApi (Google Hotels and Google Flights) as it arrives.
 
 ### Progressive Hydration on Mount
 ```typescript
 useEffect(() => {
-  const hotelApiPromise = hotelApiPromiseMap.get(destinationId);
-  if (!hotelApiPromise) return;
+  const stayPromise = stayPromiseMap.get(destinationId);
+  if (!stayPromise) return;
   
-  setHotelApiLoading(true); // skeleton loaders appear on Flights/Hotel tabs
+  setStayLoading(true); // skeleton loaders appear on Flights/Hotel tabs
   
-  hotelApiPromise.then((hotelApiData) => {
-    // Silently patches in live data when HotelAPI finally resolves
+  stayPromise.then((stayData) => {
+    // Silently patches in live data when SerpApi finally resolves
     setItinerary(prev => ({
       ...prev,
-      flights: hotelApiData.flights,
-      hotels: hotelApiData.hotels,
-      totalCost: hotelApiData.totalCost
+      flights: stayData.flights,
+      hotels: stayData.hotels,
+      totalCost: stayData.totalCost
     }));
-    setHotelApiLoading(false); // skeletons replaced with real data
+    setStayLoading(false); // skeletons replaced with real data
   }).catch(() => {
-    setHotelApiLoading(false); // show fallback mock data on error
+    setStayLoading(false); // show fallback mock data on error
   });
 }, [destinationId]);
 ```
@@ -501,9 +501,9 @@ useEffect(() => {
 type TabId = "days" | "flights" | "hotels" | "budget" | "map";
 const [activeTab, setActiveTab] = useState<TabId>("days");
 ```
-Each tab renders conditionally. The "Flights" and "Hotels" tabs show Framer Motion skeleton loaders while `hotelApiLoading` is true:
+Each tab renders conditionally. The "Flights" and "Hotels" tabs show Framer Motion skeleton loaders while `stayLoading` is true:
 ```tsx
-{hotelApiLoading ? (
+{stayLoading ? (
   <div className="animate-pulse bg-gray-200 rounded-2xl h-24 w-full" />
 ) : (
   <FlightCard flight={itinerary.flights[0]} />
@@ -625,7 +625,7 @@ export async function getShortlistFromAPI(sessionId, preferences, budget) {
 | `recordSwipe()` | `POST /swipe` | Log swipe for server ML |
 | `getShortlistFromAPI()` | `POST /destinations/shortlist` | Rank cities by vector |
 | `generateItineraryAIFromAPI()` | `POST /destinations/itinerary/ai` | Gemini day-plan (fast) |
-| `generateItineraryHotelAPIFromAPI()` | `POST /destinations/itinerary/hotelApi` | Live flights + hotels (slow) |
+| `generateItineraryStayFromAPI()` | `POST /destinations/itinerary/generate-stay` | Live flights + hotels (slow) |
 | `fetchNextCards()` | `POST /cards/next` | Background adaptive fetch |
 | `submitCalibration()` | `POST /calibration` | Submit ContextualDuel result |
 
@@ -713,7 +713,7 @@ This is a **mobile-first** app. Use Chrome DevTools → Toggle Device Toolbar (C
 > `useState` triggers a React reconciliation and re-render on every update. The vector math updates 10-20 times per second while a card is being dragged. Using `useRef` lets us mutate the math in-place with zero rendering overhead, keeping the animation at 60fps.
 
 **Q: How do you prevent duplicate API calls when navigating back and forth?**
-> We store the raw JavaScript `Promise` object in a module-level `Map` the moment it's dispatched. If the user navigates away and returns, we check `hotelApiPromiseMap.get(destId)` — if a Promise exists, we simply attach `.then()` to the already-running one. A JavaScript Promise that resolves while you're away is "settled," so the `.then()` fires instantly with cached data. This means the heavy 40-second HotelAPI call only fires once per destination.
+> We store the raw JavaScript `Promise` object in a module-level `Map` the moment it's dispatched. If the user navigates away and returns, we check `stayPromiseMap.get(destId)` — if a Promise exists, we simply attach `.then()` to the already-running one. A JavaScript Promise that resolves while you're away is "settled," so the `.then()` fires instantly with cached data. This means the slow hotel-and-flights lookup only fires once per destination.
 
 **Q: How does photo upload skip swipe phases?**
 > Gemini Vision returns an array of preference tags. `page.tsx` analyzes which of the 3 swipe categories (vibes, activities, stays) were covered. It sets `skipPhases` array and increments `swipeKey` — the integer bound to `key={}` on the `SwipeEngine` div — which forces React to fully destroy and remount the component with the new skip config.

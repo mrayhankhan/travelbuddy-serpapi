@@ -397,7 +397,7 @@ score += (overlap / destTags.length) * 0.10;
 const matchPercent = Math.min(99, Math.max(55, Math.round(score * 100)));
 ```
 
-**Only the hardcoded `HotelAPI_VALID_CITIES` set (37 cities) is ranked.** This prevents showing destinations that would silently fall back to fake seed data for both hotel AND flights.
+**Only destinations with an airport code in `AIRPORT_CODE_MAP` (`server/src/lib/serpApi.js`) are ranked.** Google Flights needs an IATA code, and this keeps a shortlisted city from silently falling back to seed data for flights.
 
 ---
 
@@ -628,7 +628,7 @@ DESTINATION RANKING (POST /api/destinations/shortlist)
 ─────────────────────────────────────────────
   finalVec = 0.5 × userVibeVec + 0.3 × userActivityVec + 0.2 × userStayVec
 
-  For each destination (filtered to 37 HotelAPI valid cities):
+  For each destination (filtered to destinations with an airport code):
     destVec = getCardVector(dest.tags)
     rawDot = dotProduct(finalVec, destVec)
 
