@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { hotelApiPromiseMap } from "@/components/itinerary/ItinerariesPage";
+import { stayPromiseMap } from "@/components/itinerary/ItinerariesPage";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft, MapPin, Clock, Star, Plane, Hotel, Car, Camera,
@@ -40,37 +40,37 @@ export default function ItineraryView({
   travelCashBalance?: number;
   destinationId?: string;
 }) {
-  // Progressive loading: start from AI data, upgrade with HotelAPI when it arrives
+  // Progressive loading: start from the seed plan, upgrade with live hotels and flights when they arrive
   const [itinerary, setItinerary] = useState<TripItinerary>(initialItinerary);
-  const [hotelApiLoading, setHotelApiLoading] = useState(false);
-  const hotelApiSubscribed = useRef(false);
+  const [stayLoading, setStayLoading] = useState(false);
+  const staySubscribed = useRef(false);
 
   useEffect(() => {
-    if (hotelApiSubscribed.current) return;
+    if (staySubscribed.current) return;
     const key = destinationId || initialItinerary.destination?.toLowerCase().replace(/\s+/g, '');
     if (!key) return;
-    const hotelApiPromise = hotelApiPromiseMap.get(key);
-    if (!hotelApiPromise) return;
-    hotelApiSubscribed.current = true;
-    setHotelApiLoading(true);
-    hotelApiPromise
-      .then((hotelApiData) => {
-        if (hotelApiData) {
+    const stayPromise = stayPromiseMap.get(key);
+    if (!stayPromise) return;
+    staySubscribed.current = true;
+    setStayLoading(true);
+    stayPromise
+      .then((stayData) => {
+        if (stayData) {
           setItinerary((prev) => ({
             ...prev,
-            hotel: hotelApiData.hotel ?? prev.hotel,
-            flights: hotelApiData.flights ?? prev.flights,
-            transfers: hotelApiData.transfers ?? prev.transfers,
-            breakdown: hotelApiData.breakdown ?? prev.breakdown,
-            totalCost: hotelApiData.totalCost ?? prev.totalCost,
-            budget: hotelApiData.budget ?? prev.budget,
+            hotel: stayData.hotel ?? prev.hotel,
+            flights: stayData.flights ?? prev.flights,
+            transfers: stayData.transfers ?? prev.transfers,
+            breakdown: stayData.breakdown ?? prev.breakdown,
+            totalCost: stayData.totalCost ?? prev.totalCost,
+            budget: stayData.budget ?? prev.budget,
           }));
         }
       })
-      .catch(() => { /* keep seed data on HotelAPI failure */ })
+      .catch(() => { /* keep the seed plan */ })
       .finally(() => {
-        setHotelApiLoading(false);
-        hotelApiPromiseMap.delete(key);
+        setStayLoading(false);
+        stayPromiseMap.delete(key);
       });
   // Only run once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -551,8 +551,8 @@ export default function ItineraryView({
           {activeTab === 'flights' && (
             <motion.div key="flights" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="flex flex-col" style={{ gap: '16px' }}>
-              {/* HotelAPI loading skeleton */}
-              {hotelApiLoading && (
+              {/* live stay-data loading skeleton */}
+              {stayLoading && (
                 <div className="flex flex-col gap-4">
                   <div className="bg-white/70 rounded-2xl p-4 flex flex-col gap-3 animate-pulse">
                     <div className="h-6 w-32 bg-[#E5E5EA] rounded-lg" />
@@ -575,7 +575,7 @@ export default function ItineraryView({
                   <p className="text-center text-[12px] text-[#8E8E93] animate-pulse">Fetching live flights…</p>
                 </div>
               )}
-              {!hotelApiLoading && flights.map((flight: any, i: number) => (
+              {!stayLoading && flights.map((flight: any, i: number) => (
                 <motion.div key={i}
                   initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
                   className="bg-white rounded-2xl shadow-[0_1px_8px_rgba(0,0,0,0.05)] overflow-hidden cursor-pointer active:scale-[0.98] transition-transform"
@@ -678,7 +678,7 @@ export default function ItineraryView({
                 </span>
               </div>
 
-              <p className="text-[10px] text-[#8E8E93]/50 text-center">Live prices from HotelAPI Flights API</p>
+              <p className="text-[10px] text-[#8E8E93]/50 text-center">Fares from Google Flights via SerpApi · priced for the whole party</p>
 
               {/* ── Flight Detail Bottom Sheet ── */}
               <AnimatePresence>
@@ -816,16 +816,20 @@ export default function ItineraryView({
                                 <p className="text-[10px] text-[#8E8E93]">Aircraft</p>
                                 <p className="text-[12px] font-semibold text-[#1A1A1A]">{fl.aircraft || 'N/A'}</p>
                               </div>
+                              {fl.isRefundable !== undefined && (
                               <div className="bg-[#F9F9FB] rounded-xl p-3">
                                 <p className="text-[10px] text-[#8E8E93]">Refundable</p>
                                 <p className={`text-[12px] font-semibold ${fl.isRefundable ? 'text-[#34C759]' : 'text-[#FF3B30]'}`}>
                                   {fl.isRefundable ? 'Yes ✓' : 'No ✕'}
                                 </p>
                               </div>
+                              )}
+                              {fl.isETicket !== undefined && (
                               <div className="bg-[#F9F9FB] rounded-xl p-3">
                                 <p className="text-[10px] text-[#8E8E93]">E-Ticket</p>
                                 <p className="text-[12px] font-semibold text-[#1A1A1A]">{fl.isETicket ? 'Available ✓' : 'N/A'}</p>
                               </div>
+                              )}
                               <div className="bg-[#F9F9FB] rounded-xl p-3">
                                 <p className="text-[10px] text-[#8E8E93]">Departure</p>
                                 <p className="text-[12px] font-semibold text-[#1A1A1A]">{fl.depDate || 'N/A'}</p>
@@ -833,18 +837,19 @@ export default function ItineraryView({
                             </div>
                           </div>
 
-                          {/* Baggage Summary */}
+                          {(fl.baggage || fl.cabinBaggage) && (
                           <div className="bg-[#F9F9FB] rounded-xl p-3">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-[12px] font-bold text-[#1A1A1A]">Baggage</span>
                             </div>
                             <div className="flex gap-4 text-[11px] text-[#8E8E93]">
-                              <span>🧳 Check-in: <span className="text-[#1A1A1A] font-medium">{fl.baggage || 'N/A'}</span></span>
-                              <span>🎒 Cabin: <span className="text-[#1A1A1A] font-medium">{fl.cabinBaggage || 'N/A'}</span></span>
+                              {fl.baggage && <span>🧳 Check-in: <span className="text-[#1A1A1A] font-medium">{fl.baggage}</span></span>}
+                              {fl.cabinBaggage && <span>🎒 Cabin: <span className="text-[#1A1A1A] font-medium">{fl.cabinBaggage}</span></span>}
                             </div>
                           </div>
+                          )}
 
-                          <p className="text-[9px] text-[#8E8E93]/50 text-center pb-4">All data sourced from HotelAPI Air API · Live pricing</p>
+                          <p className="text-[9px] text-[#8E8E93]/50 text-center pb-4">Fares from Google Flights via SerpApi</p>
                         </div>
                       </motion.div>
                     </motion.div>
@@ -856,8 +861,8 @@ export default function ItineraryView({
 
           {/* ─── HOTEL TAB ─── */}
           {activeTab === 'hotel' && (() => {
-            // Show skeleton while HotelAPI is still fetching
-            if (hotelApiLoading) {
+            // Show skeleton while live hotels and flights are still loading
+            if (stayLoading) {
               return (
                 <motion.div key="hotel-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className="flex flex-col gap-4">
@@ -923,9 +928,12 @@ export default function ItineraryView({
                     )}
                     {/* Live + rating */}
                     <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
-                      {hotel.isHotelAPILive && (
-                        <div className="bg-[#34C759]/90 backdrop-blur-sm rounded-full px-2.5 py-1">
-                          <span className="text-[10px] font-bold text-white">● LIVE</span>
+                      {hotel.source === 'serpapi' && (
+                        <div className={`backdrop-blur-sm rounded-full px-2.5 py-1 ${hotel.provenance === 'saved' ? 'bg-black/55' : 'bg-[#34C759]/90'}`}
+                          title={hotel.provenance === 'saved' ? 'A real SerpApi response saved for demos, not fetched just now' : 'Fetched from Google Hotels through SerpApi'}>
+                          <span className="text-[10px] font-bold text-white">
+                            {hotel.provenance === 'saved' ? 'SAVED EXAMPLE' : hotel.provenance === 'cached' ? '● LIVE · CACHED' : '● LIVE'} · SERPAPI
+                          </span>
                         </div>
                       )}
                       <div className="bg-white/90 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1">
@@ -982,7 +990,7 @@ export default function ItineraryView({
                     )}
                     <div className="mt-3 pt-3 border-t border-[#F2F2F7] flex items-center justify-between">
                       <div>
-                        <p className="text-[11px] text-[#8E8E93]">{hotel.nights} nights · {hotel.mealType || 'Room Only'}</p>
+                        <p className="text-[11px] text-[#8E8E93]">{hotel.nights} nights{hotel.mealType ? ` · ${hotel.mealType}` : ''}</p>
                         <p className="text-[11px] text-[#8E8E93]">₹{Math.round(hotel.totalCost / hotel.nights).toLocaleString()}/night</p>
                       </div>
                       <div className="text-right">
@@ -1052,7 +1060,7 @@ export default function ItineraryView({
                     <span className="text-[12px] font-bold text-[#6B6B6B]">₹{t.cost.toLocaleString()}</span>
                   </div>
                 ))}
-                <p className="text-[10px] text-[#8E8E93]/50 text-center">Powered by HotelAPI Hotels API · Live pricing</p>
+                <p className="text-[10px] text-[#8E8E93]/50 text-center">Rates from Google Hotels via SerpApi</p>
 
                 {/* ── Full Detail Bottom Sheet ── */}
                 <AnimatePresence>
@@ -1116,6 +1124,7 @@ export default function ItineraryView({
                               <p className="text-[10px] text-[#8E8E93] font-medium mb-1">Check-out</p>
                               <p className="text-[15px] font-bold text-[#1A1A1A]">{hotel.checkOutTime || '11:00'}</p>
                             </div>
+                            {typeof hotel.isRefundable === 'boolean' && (
                             <div className="flex-1 rounded-xl p-3 text-center"
                               style={{ backgroundColor: hotel.isRefundable ? '#EDFBF1' : '#FFF3E0' }}>
                               <p className="text-[10px] text-[#8E8E93] font-medium mb-1">Policy</p>
@@ -1124,6 +1133,7 @@ export default function ItineraryView({
                                 {hotel.isRefundable ? '✓ Refundable' : 'Non-refund'}
                               </p>
                             </div>
+                            )}
                           </div>
 
                           {/* Description */}
@@ -1251,7 +1261,7 @@ export default function ItineraryView({
           {activeTab === 'budget' && (
             <motion.div key="budget" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="flex flex-col" style={{ gap: '16px' }}>
-              {hotelApiLoading && (
+              {stayLoading && (
                 <div className="flex flex-col gap-4">
                   <div className="bg-[#E5E5EA] rounded-2xl h-24 animate-pulse" />
                   <div className="flex flex-col gap-2">
@@ -1262,7 +1272,7 @@ export default function ItineraryView({
                   <p className="text-center text-[12px] text-[#8E8E93] animate-pulse">Calculating your live budget…</p>
                 </div>
               )}
-              {!hotelApiLoading && <>
+              {!stayLoading && <>
               {/* Total card */}
               <div className="bg-[#1A1A1A] rounded-2xl p-5 text-white">
                 <p className="text-[12px] text-white/50 font-medium mb-1">Total Trip Cost</p>

@@ -857,7 +857,7 @@ export default function Home() {
                 className="text-[11px] text-[#8E8E93]/70 tracking-wide"
                 style={{ marginTop: 10 }}
               >
-                Powered by HotelAPI API&apos;s and Inventory
+                Live hotels and flights, via SerpApi
               </motion.p>
             </div>
           </motion.div>
@@ -1045,7 +1045,7 @@ export default function Home() {
                 </AnimatePresence>
               </div>
               <p className="text-[10px] text-[#8E8E93]/45 mt-2 tracking-wide">
-                Powered by HotelAPI · Real-time availability
+                Live hotels & flights via SerpApi
               </p>
             </div>
           </motion.div>
@@ -1260,7 +1260,7 @@ export default function Home() {
         }}
       />
 
-      {/* ═══ TRAVEL CHAHotelAPIT (itinerary + booked phases) ═══ */}
+      {/* ═══ TRAVEL CHATBOT (itinerary + booked phases) ═══ */}
       {(phase === "itinerary" || phase === "booked") && itinerary && (
         <TravelChatbot
           destination={itinerary.destination}

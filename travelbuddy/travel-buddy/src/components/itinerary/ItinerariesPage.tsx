@@ -7,7 +7,7 @@ import { TripItinerary } from "@/data/itineraryMock";
 import { SessionData } from "@/components/onboarding/SessionInit";
 import { ProfileTags } from "@/components/discovery/ProfileDrawer";
 import ItineraryCard from "@/components/itinerary/ItineraryCard";
-import { generateMultiItineraryFromAPI, generateItineraryAIFromAPI, generateItineraryHotelAPIFromAPI } from "@/lib/api";
+import { generateMultiItineraryFromAPI, generateItineraryAIFromAPI, generateItineraryStayFromAPI } from "@/lib/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE-LEVEL SINGLETONS
@@ -28,9 +28,9 @@ let feedPromiseCache: Promise<any> | null = null;
 // already-started (or finished) card costs zero extra network calls.
 export const aiPromiseMap: Map<string, Promise<any>> = new Map();
 
-// Slow-lane cache: destinationId → Promise<hotelApiData>
+// Slow-lane cache: destinationId → Promise<live stay data>
 // ItineraryView reads this to know when to upgrade itself once live pricing arrives.
-export const hotelApiPromiseMap: Map<string, Promise<any>> = new Map();
+export const stayPromiseMap: Map<string, Promise<any>> = new Map();
 
 const LOADER_STAGES = [
   "Finding perfect destinations...",
@@ -96,7 +96,7 @@ export default function ItinerariesPage({
     async (varSeed: number) => {
       // Clear detail caches and reset sequential pre-fetch
       aiPromiseMap.clear();
-      hotelApiPromiseMap.clear();
+      stayPromiseMap.clear();
       cachedItineraries = null;
       cachedVariation = varSeed;
       setPrefetchIndex(0);
@@ -198,15 +198,15 @@ export default function ItinerariesPage({
     const aiPromise = generateItineraryAIFromAPI(sessionId, destId);
     aiPromiseMap.set(destId, aiPromise);
 
-    // ── HotelAPI slow lane (fire-and-forget, does NOT block the sequence) ────────
-    if (!hotelApiPromiseMap.has(destId)) {
-      const hotelApiPromise = generateItineraryHotelAPIFromAPI(sessionId, destId);
-      hotelApiPromiseMap.set(destId, hotelApiPromise);
-      hotelApiPromise
-        .then(() => console.log(`✅ HotelAPI prefetch done for ${card.destination}`))
+    // ── live stay lane (fire-and-forget, does NOT block the sequence) ────────
+    if (!stayPromiseMap.has(destId)) {
+      const stayPromise = generateItineraryStayFromAPI(sessionId, destId);
+      stayPromiseMap.set(destId, stayPromise);
+      stayPromise
+        .then(() => console.log(`✅ live stay prefetch done for ${card.destination}`))
         .catch((err) => {
-          console.warn(`⚠️ HotelAPI prefetch failed for ${card.destination}:`, err?.message);
-          hotelApiPromiseMap.delete(destId); // allow retry on click
+          console.warn(`⚠️ live stay prefetch failed for ${card.destination}:`, err?.message);
+          stayPromiseMap.delete(destId); // allow retry on click
         });
     }
 
@@ -249,13 +249,13 @@ export default function ItinerariesPage({
       }, 600);
 
       try {
-        // ── HotelAPI slow lane ─────────────────────────────────────────────────────
+        // ── live stay lane ─────────────────────────────────────────────────────
         // Reuse cached promise if the prefetch already started it.
-        // ItineraryView reads hotelApiPromiseMap to upgrade itself once it resolves.
-        if (!hotelApiPromiseMap.has(destinationId)) {
-          const hotelApiPromise = generateItineraryHotelAPIFromAPI(sessionId, destinationId);
-          hotelApiPromiseMap.set(destinationId, hotelApiPromise);
-          hotelApiPromise.catch(() => hotelApiPromiseMap.delete(destinationId));
+        // ItineraryView reads stayPromiseMap to upgrade itself once it resolves.
+        if (!stayPromiseMap.has(destinationId)) {
+          const stayPromise = generateItineraryStayFromAPI(sessionId, destinationId);
+          stayPromiseMap.set(destinationId, stayPromise);
+          stayPromise.catch(() => stayPromiseMap.delete(destinationId));
         }
 
         // ── AI fast lane ──────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ export default function ItinerariesPage({
                   </AnimatePresence>
                 </div>
                 <p className="text-[10px] text-[#8E8E93]/45 mt-2 tracking-wide">
-                  Powered by HotelAPI · Real-time availability
+                  Live hotels & flights via SerpApi
                 </p>
               </div>
             </motion.div>
@@ -485,7 +485,7 @@ export default function ItinerariesPage({
                   </AnimatePresence>
                 </div>
                 <p className="text-[10px] text-[#8E8E93]/45 mt-2 tracking-wide">
-                  Powered by HotelAPI · Real-time availability
+                  Live hotels & flights via SerpApi
                 </p>
               </div>
             </motion.div>

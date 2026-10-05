@@ -1,4 +1,4 @@
-// HotelAPI-verified European destinations (batch 5)
+// European destinations (batch 5)
 module.exports = [
     {
         "destinationId": "dublin",

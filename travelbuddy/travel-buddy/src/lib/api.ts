@@ -360,7 +360,7 @@ export async function generateItineraryDetailsFromAPI(
 /**
  * PROGRESSIVE LOADING — AI fast lane (~10-15s)
  * Fetches Gemini-generated days + recommendation explanation.
- * Call this simultaneously with generateItineraryHotelAPIFromAPI so the
+ * Call this simultaneously with generateItineraryStayFromAPI so the
  * user sees the Days tab as soon as this resolves.
  */
 export async function generateItineraryAIFromAPI(
@@ -383,25 +383,25 @@ export async function generateItineraryAIFromAPI(
 }
 
 /**
- * PROGRESSIVE LOADING — HotelAPI slow lane (~35-55s)
+ * PROGRESSIVE LOADING — live hotels and flights lane (SerpApi)
  * Fetches live hotel, flights, and pricing. Call this at the same time as
  * generateItineraryAIFromAPI and merge the result into ItineraryView when it resolves.
  */
-export async function generateItineraryHotelAPIFromAPI(
+export async function generateItineraryStayFromAPI(
     sessionId: string | null,
     destinationId: string,
 ): Promise<{ hotel: any; flights: any[]; transfers: any[]; breakdown: any; totalCost: number; budget: number } | null> {
     if (!sessionId) return null;
     try {
-        const res = await fetch(`${API_BASE}/destinations/itinerary/generate-hotelApi`, {
+        const res = await fetch(`${API_BASE}/destinations/itinerary/generate-stay`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId, destinationId }),
         });
-        if (!res.ok) throw new Error(`HotelAPI lane failed: ${res.status}`);
+        if (!res.ok) throw new Error(`Live stay lane failed: ${res.status}`);
         return await res.json();
     } catch (err) {
-        console.warn('⚠️ generate-hotelApi API failed:', err);
+        console.warn('⚠️ generate-stay API failed:', err);
         return null;
     }
 }

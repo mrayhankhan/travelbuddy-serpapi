@@ -1,4 +1,4 @@
-// Additional European destinations (HotelAPI-verified)
+// Additional European destinations 
 module.exports = [
     {
         destinationId: "oslo",

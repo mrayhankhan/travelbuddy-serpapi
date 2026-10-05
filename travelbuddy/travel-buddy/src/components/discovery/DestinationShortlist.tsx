@@ -113,9 +113,9 @@ export default function DestinationShortlist({
         ))}
       </div>
 
-      {/* HotelAPI branding */}
+      {/* source line */}
       <p className="text-center text-[10px] text-[#8E8E93]/50" style={{ marginTop: '20px' }}>
-        Curated from 40+ European countries · Powered by HotelAPI
+        Matched to your swipes · hotels and flights via SerpApi
       </p>
     </div>
   );

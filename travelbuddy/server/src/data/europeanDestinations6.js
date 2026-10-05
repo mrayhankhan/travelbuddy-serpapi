@@ -1,4 +1,4 @@
-// HotelAPI-verified European destinations (batch 6)
+// European destinations (batch 6)
 module.exports = [
     {
         "destinationId": "pisa",

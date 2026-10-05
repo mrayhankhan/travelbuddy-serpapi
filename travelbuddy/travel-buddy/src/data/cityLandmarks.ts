@@ -5,8 +5,7 @@
  * Using a static list avoids the Places API dynamic search entirely,
  * protecting your $300 free trial credit.
  *
- * ⚠️  IMPORTANT: Only cities with BOTH HotelAPI Hotel API + Air API support are listed.
- *     Source of truth: server/hotelApi_verification_report.json (bothAvailable: true)
+ * Landmark map data for the destinations the app can plan.
  *     38 verified cities as of March 2026.
  *
  * To add a new city: copy any block and update coords/landmarks.
@@ -493,7 +492,7 @@ export const CITY_MAP_DATA: Record<string, CityMapData> = {
  *
  * Returns the map data for a city by name (case-insensitive).
  * Falls back to undefined if the city is not in our list.
- * Only cities with BOTH HotelAPI Hotel + Air API support are included.
+ * Cities with landmark map data.
  */
 export function getCityMapData(cityName: string): CityMapData | undefined {
   const key = cityName.toLowerCase().replace(/[^a-z]/g, '');
@@ -501,7 +500,7 @@ export function getCityMapData(cityName: string): CityMapData | undefined {
 }
 
 /**
- * HotelAPI-verified city list (for display/validation elsewhere in the app).
- * These 38 cities all have confirmed Hotel API + Air API availability.
+ * City list (for display/validation elsewhere in the app).
+ * The 38 cities with landmark map data.
  */
-export const HotelAPI_VALID_CITIES = Object.keys(CITY_MAP_DATA);
+export const VALID_CITIES = Object.keys(CITY_MAP_DATA);

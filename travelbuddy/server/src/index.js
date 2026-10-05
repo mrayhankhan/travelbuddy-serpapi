@@ -30,6 +30,11 @@ app.use('/api/photo', require('./routes/photo'));
 // NEW Backend auth routes
 app.use('/api/auth-backend', require('./routes/auth'));
 
+// SerpApi credit usage: how much of the cap is spent, and what is saved.
+app.get('/api/serpapi/usage', (req, res) => {
+    res.json(require('./lib/serpApi').serpUsage());
+});
+
 // Chatbot route (Gemini-powered travel assistant)
 app.use('/api/chatbot', require('./routes/chatbot'));
 

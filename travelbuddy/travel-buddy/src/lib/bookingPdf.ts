@@ -9,18 +9,17 @@ export interface BookingPdfInput {
   bookedAt?: string;
 }
 
-const OFFICIAL_HotelAPI_LOGO_PATH = "/hotelApi-logo.png";
 
 const COLORS = {
   ink: [18, 32, 56] as [number, number, number],
   muted: [99, 115, 129] as [number, number, number],
   border: [219, 229, 240] as [number, number, number],
   soft: [245, 248, 252] as [number, number, number],
-  hotelApiBlue: [0, 78, 146] as [number, number, number],
-  hotelApiBlueLight: [228, 241, 252] as [number, number, number],
-  hotelApiBlueMid: [0, 132, 203] as [number, number, number],
-  hotelApiOrange: [245, 130, 32] as [number, number, number],
-  hotelApiOrangeLight: [255, 242, 230] as [number, number, number],
+  brandBlue: [0, 78, 146] as [number, number, number],
+  brandBlueLight: [228, 241, 252] as [number, number, number],
+  brandBlueMid: [0, 132, 203] as [number, number, number],
+  brandOrange: [245, 130, 32] as [number, number, number],
+  brandOrangeLight: [255, 242, 230] as [number, number, number],
   success: [22, 163, 74] as [number, number, number],
 };
 
@@ -125,11 +124,11 @@ async function generateBookingPdf({
 
   const sectionTitle = (title: string, subtitle?: string) => {
     ensureSpace(46);
-    doc.setFillColor(COLORS.hotelApiBlue[0], COLORS.hotelApiBlue[1], COLORS.hotelApiBlue[2]);
+    doc.setFillColor(COLORS.brandBlue[0], COLORS.brandBlue[1], COLORS.brandBlue[2]);
     doc.roundedRect(margin, y - 11, 4, 18, 2, 2, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(15);
-    setTextColor(COLORS.hotelApiBlue);
+    setTextColor(COLORS.brandBlue);
     doc.text(title, margin + 10, y);
     if (subtitle) {
       doc.setFont("helvetica", "normal");
@@ -143,8 +142,6 @@ async function generateBookingPdf({
     doc.setDrawColor(COLORS.border[0], COLORS.border[1], COLORS.border[2]);
     doc.line(margin + 10, y - 5, pageWidth - margin, y - 5);
   };
-
-  const hotelApiLogoDataUrl = await imageUrlToDataUrl(OFFICIAL_HotelAPI_LOGO_PATH);
 
   const keyValue = (label: string, value: string, x: number, yy: number, w: number) => {
     doc.setFont("helvetica", "normal");
@@ -167,14 +164,8 @@ async function generateBookingPdf({
   const bookingRef = `TB-${new Date(bookedAtValue).getTime().toString().slice(-8)}`;
 
   ensureSpace(166);
-  card(margin, y, contentWidth, 150, COLORS.hotelApiBlueLight, COLORS.border, 14);
-  card(margin, y, contentWidth, 10, COLORS.hotelApiBlue, COLORS.hotelApiBlue, 8);
-
-  // Official the hotel API provider logo, left-aligned in header.
-  if (hotelApiLogoDataUrl) {
-    card(margin + 12, y + 14, 116, 34, [255, 255, 255], COLORS.border, 8);
-    doc.addImage(hotelApiLogoDataUrl, "PNG", margin + 20, y + 19, 98, 24);
-  }
+  card(margin, y, contentWidth, 150, COLORS.brandBlueLight, COLORS.border, 14);
+  card(margin, y, contentWidth, 10, COLORS.brandBlue, COLORS.brandBlue, 8);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
@@ -184,17 +175,17 @@ async function generateBookingPdf({
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   setTextColor(COLORS.muted);
-  doc.text("Issued by TravelBuddy in partnership with the hotel API provider", margin + 14, y + 82);
+  doc.text("Issued by TravelBuddy · fares and rates from Google Flights and Hotels via SerpApi", margin + 14, y + 82);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  setTextColor(COLORS.hotelApiOrange);
+  setTextColor(COLORS.brandOrange);
   doc.text("TravelBuddy", margin + 14, y + 98);
 
   card(margin + 14, y + 102, contentWidth - 28, 34, [255, 255, 255], COLORS.border, 10);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  setTextColor(COLORS.hotelApiBlue);
+  setTextColor(COLORS.brandBlue);
   doc.text(`${itinerary.destination}, ${itinerary.country}`, margin + 24, y + 122);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -211,7 +202,7 @@ async function generateBookingPdf({
   sectionTitle("1. Trip Overview", "Snapshot of your confirmed journey");
   ensureSpace(94);
   card(margin, y, contentWidth, 82, COLORS.soft, COLORS.border, 12);
-  card(margin, y, 8, 82, COLORS.hotelApiBlueMid, COLORS.hotelApiBlueMid, 8);
+  card(margin, y, 8, 82, COLORS.brandBlueMid, COLORS.brandBlueMid, 8);
 
   const colW = (contentWidth - 24) / 3;
   const colY = y + 16;
@@ -235,7 +226,7 @@ async function generateBookingPdf({
     ensureSpace(cardHeight + 10);
     card(margin, y, contentWidth, cardHeight, [255, 255, 255], COLORS.border, 12);
 
-    doc.setFillColor(COLORS.hotelApiBlueMid[0], COLORS.hotelApiBlueMid[1], COLORS.hotelApiBlueMid[2]);
+    doc.setFillColor(COLORS.brandBlueMid[0], COLORS.brandBlueMid[1], COLORS.brandBlueMid[2]);
     doc.roundedRect(margin + 12, y + 10, 56, 18, 9, 9, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
@@ -251,13 +242,13 @@ async function generateBookingPdf({
     const timelineX = margin + 28;
     const lineTop = rowY - 2;
     const lineBottom = y + cardHeight - 12;
-    doc.setDrawColor(COLORS.hotelApiBlueLight[0], COLORS.hotelApiBlueLight[1], COLORS.hotelApiBlueLight[2]);
+    doc.setDrawColor(COLORS.brandBlueLight[0], COLORS.brandBlueLight[1], COLORS.brandBlueLight[2]);
     doc.line(timelineX, lineTop, timelineX, lineBottom);
 
     (day.items || []).forEach((item, idx) => {
       const blockH = itemBlocks[idx];
       const markerY = rowY + 8;
-      doc.setFillColor(COLORS.hotelApiOrange[0], COLORS.hotelApiOrange[1], COLORS.hotelApiOrange[2]);
+      doc.setFillColor(COLORS.brandOrange[0], COLORS.brandOrange[1], COLORS.brandOrange[2]);
       doc.circle(timelineX, markerY, 3.5, "F");
 
       doc.setFont("helvetica", "bold");
@@ -297,12 +288,12 @@ async function generateBookingPdf({
       ensureSpace(130);
       card(margin, y, contentWidth, 120, [255, 255, 255], COLORS.border, 12);
 
-      const headerFill = idx === 0 ? COLORS.hotelApiBlueLight : COLORS.hotelApiOrangeLight;
+      const headerFill = idx === 0 ? COLORS.brandBlueLight : COLORS.brandOrangeLight;
       card(margin + 10, y + 10, contentWidth - 20, 22, headerFill, COLORS.border, 8);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
-      setTextColor(idx === 0 ? COLORS.hotelApiBlue : COLORS.hotelApiOrange);
-      doc.text(idx === 0 ? "OUHotelAPIUND FLIGHT" : "RETURN FLIGHT", margin + 18, y + 24);
+      setTextColor(idx === 0 ? COLORS.brandBlue : COLORS.brandOrange);
+      doc.text(idx === 0 ? "OUTBOUND FLIGHT" : "RETURN FLIGHT", margin + 18, y + 24);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
@@ -354,13 +345,13 @@ async function generateBookingPdf({
   ensureSpace(152);
   card(margin, y, contentWidth, 140, [255, 255, 255], COLORS.border, 12);
 
-  card(margin + contentWidth - 126, y + 14, 108, 72, COLORS.hotelApiBlueLight, COLORS.border, 8);
+  card(margin + contentWidth - 126, y + 14, 108, 72, COLORS.brandBlueLight, COLORS.border, 8);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  setTextColor(COLORS.hotelApiBlue);
+  setTextColor(COLORS.brandBlue);
   doc.text("HOTEL IMAGE", margin + contentWidth - 72, y + 54, { align: "center" });
 
-  doc.setDrawColor(COLORS.hotelApiBlueMid[0], COLORS.hotelApiBlueMid[1], COLORS.hotelApiBlueMid[2]);
+  doc.setDrawColor(COLORS.brandBlueMid[0], COLORS.brandBlueMid[1], COLORS.brandBlueMid[2]);
   doc.line(margin + contentWidth - 116, y + 65, margin + contentWidth - 28, y + 65);
 
   doc.setFont("helvetica", "bold");
@@ -413,16 +404,16 @@ async function generateBookingPdf({
   rows.forEach(([label, value], idx) => {
     const isFinal = idx === rows.length - 1;
     if (isFinal) {
-      card(margin + 14, rowY - 11, contentWidth - 28, 26, COLORS.hotelApiOrangeLight, COLORS.border, 7);
+      card(margin + 14, rowY - 11, contentWidth - 28, 26, COLORS.brandOrangeLight, COLORS.border, 7);
     }
     doc.setFont("helvetica", isFinal ? "bold" : "normal");
     doc.setFontSize(isFinal ? 11 : 10);
-    setTextColor(isFinal ? COLORS.hotelApiBlue : COLORS.muted);
+    setTextColor(isFinal ? COLORS.brandBlue : COLORS.muted);
     doc.text(label, margin + 20, rowY + 3);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(isFinal ? 11 : 10);
-    setTextColor(isFinal ? COLORS.hotelApiOrange : COLORS.ink);
+    setTextColor(isFinal ? COLORS.brandOrange : COLORS.ink);
     doc.text(value, margin + contentWidth - 20, rowY + 3, { align: "right" });
 
     rowY += 28;

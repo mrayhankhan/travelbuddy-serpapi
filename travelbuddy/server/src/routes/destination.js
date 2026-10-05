@@ -3,10 +3,9 @@ const router = express.Router();
 const Session = require('../models/Session');
 const Destination = require('../models/Destination');
 const { rankDestinations, adjustItineraryCosts, personalizeItinerary, parseBudget, pruneActivitiesByBudget, generateRecommendationExplanation } = require('../lib/scoring');
-const { searchHotels, getDatesForDuration, getLiveFlights, AIRPORT_CODE_MAP } = require('../lib/hotelApi');
+const { searchHotels, getDatesForDuration, getLiveFlights, AIRPORT_CODE_MAP } = require('../lib/serpApi');
 const { resolveOrigin, CITY_TO_IATA } = require('../lib/geocoder');
 const { generateExplanationWithGemini, generateItineraryWithGemini } = require('../lib/gemini');
-const cityCodeMap = require('../lib/cityCodeMap');
 
 // POST /api/destinations/shortlist — Get ranked destinations based on preferences
 router.post('/shortlist', async (req, res) => {
@@ -25,18 +24,13 @@ router.post('/shortlist', async (req, res) => {
 
         const allDestinations = await Destination.find().lean();
 
-        // ⚠️  IMPORTANT: Only show cities verified to have BOTH HotelAPI Hotel API + Air API
-        // Source: server/hotelApi_verification_report.json (bothAvailable: true)
-        const HotelAPI_VALID_CITIES = new Set([
-            'reykjavik','tallinn','bergen','helsinki','prague','istanbul','vienna',
-            'lisbon','copenhagen','barcelona','paris','london','nice','milan','lyon',
-            'thessaloniki','glasgow','stockholm','oslo','berlin','brussels','warsaw',
-            'split','vilnius','manchester','izmir','corfu','tenerife','faro',
-            'marseille','frankfurt','dusseldorf','verona','wroclaw','belgrade',
-            'paphos','varna','clujnapoca'
-        ]);
+        // Only offer destinations we can price a flight to: those with an airport
+        // code. Google Flights and Hotels then cover every one of them live.
+        const FLIGHT_CITIES = new Set(
+            Object.keys(AIRPORT_CODE_MAP).map(k => k.replace(/[^a-z]/g, ''))
+        );
         const destinations = allDestinations.filter(d =>
-            HotelAPI_VALID_CITIES.has((d.destinationId || '').toLowerCase().replace(/[^a-z]/g, ''))
+            FLIGHT_CITIES.has((d.destinationId || '').toLowerCase().replace(/[^a-z]/g, ''))
         );
 
         // Multi-vector ranking: vibes (50%) + activities (30%) + stays (20%)
@@ -143,24 +137,24 @@ router.post('/itinerary/generate', async (req, res) => {
             vibeScores: session.vibeScores ? Object.fromEntries(session.vibeScores) : {},
         };
 
-        console.log(`🚀 Firing ALL 4 heavy API calls in parallel (HotelAPI Hotels, HotelAPI Flights, Gemini Itinerary, Gemini Explanation)...`);
+        console.log(`🚀 Firing ALL 4 heavy API calls in parallel (SerpApi hotels, SerpApi flights, Gemini Itinerary, Gemini Explanation)...`);
         console.log(`   User profile: Vibes=[${topVibes.slice(0,3).join(', ')}] Activities=[${topActivities.slice(0,3).join(', ')}] Stays=[${topStays.slice(0,3).join(', ')}]`);
         console.log(`   Trip: ${durationDays} days, ${session.travelers} travelers, ₹${userBudget.toLocaleString()} budget, ${travelDates}`);
 
         // ── PARALLEL FAN-OUT: all 4 heavy network calls fire simultaneously ────
         // Each has its own .catch() so a single failure never aborts Promise.all.
-        const [hotelApiHotel, directFlights, aiItinerary, aiExplanationText] = await Promise.all([
+        const [liveHotel, directFlights, aiItinerary, aiExplanationText] = await Promise.all([
             searchHotels(
                 destination.name, checkIn, checkOut, rooms, totalPax, targetHotelBudget, userPreferences
             ).catch(err => {
-                console.warn(`⚠️  HotelAPI Hotels failed: ${err.message}`);
+                console.warn(`⚠️  SerpApi hotels failed: ${err.message}`);
                 return null;
             }),
 
             getLiveFlights(
                 resolved.originCode, destination.name, checkIn, checkOut, adultCount, childCount, targetFlightBudget
             ).catch(err => {
-                console.warn(`⚠️  HotelAPI Flights failed: ${err.message}`);
+                console.warn(`⚠️  SerpApi flights failed: ${err.message}`);
                 return null;
             }),
 
@@ -188,15 +182,15 @@ router.post('/itinerary/generate', async (req, res) => {
 
         console.log(`✅ Parallel fan-out complete.`);
 
-        // ── Inject HotelAPI Hotel result ────────────────────────────────────────────
-        if (hotelApiHotel) {
-            adjusted.hotel = hotelApiHotel;
-            if (hotelApiHotel.totalCost) {
-                adjusted.breakdown.stay = hotelApiHotel.totalCost;
+        // ── Inject the live hotel result ────────────────────────────────────────────
+        if (liveHotel) {
+            adjusted.hotel = liveHotel;
+            if (liveHotel.totalCost) {
+                adjusted.breakdown.stay = liveHotel.totalCost;
             }
-            console.log(`✅  Live HotelAPI hotel injected: ${hotelApiHotel.name}`);
+            console.log(`✅  Live SerpApi hotel injected: ${liveHotel.name}`);
         } else {
-            console.log(`⚠️  HotelAPI hotel unavailable — using seed data for ${destination.name}`);
+            console.log(`⚠️  SerpApi hotel unavailable — using seed data for ${destination.name}`);
         }
 
         // ── Smart flight routing (multi-leg fallback logic preserved) ─────────
@@ -256,11 +250,11 @@ router.post('/itinerary/generate', async (req, res) => {
                 adjusted.breakdown.flights = finalFlights.reduce((s, f) => s + (f.cost || 0), 0);
                 console.log(`✅  Multi-leg flights injected: ${session.departureCity} → DEL → ${destination.name} → DEL → ${session.departureCity}`);
             } else {
-                console.log(`⚠️  HotelAPI flights completely unavailable — using seed data`);
+                console.log(`⚠️  SerpApi flights completely unavailable — using seed data`);
             }
 
         } else {
-            // Direct city had an airport but HotelAPI returned nothing — try DEL fallback
+            // Direct city had an airport but SerpApi returned nothing — try DEL fallback
             console.log(`⚠️  No flights from ${resolved.originCode}. Trying DEL fallback...`);
             const delFlights = await getLiveFlights(
                 'DEL', destination.name, checkIn, checkOut, adultCount, childCount, targetFlightBudget
@@ -307,7 +301,7 @@ router.post('/itinerary/generate', async (req, res) => {
                 adjusted.breakdown.flights = finalFlights.reduce((s, f) => s + (f.cost || 0), 0);
                 console.log(`✅  Fallback multi-leg: ${userCode} → DEL → ${destination.name} → DEL → ${userCode}`);
             } else {
-                console.log(`⚠️  HotelAPI flights completely unavailable — using seed data`);
+                console.log(`⚠️  SerpApi flights completely unavailable — using seed data`);
             }
         }
 
@@ -449,11 +443,11 @@ router.post('/itinerary/generate-ai', async (req, res) => {
     }
 });
 
-// ─── PROGRESSIVE LOADING: HotelAPI-only slow lane ──────────────────────────────────
-// POST /api/destinations/itinerary/generate-hotelApi
+// ─── PROGRESSIVE LOADING: live stay lane (hotel + flights) ──────────────────────────────────
+// POST /api/destinations/itinerary/generate-stay
 // Returns live hotel + flights + pricing only (~35-55s)
-router.post('/itinerary/generate-hotelApi', async (req, res) => {
-    console.log(`\n[API ENTRY] POST /api/destinations/itinerary/generate-hotelApi - dest:`, req.body.destinationId);
+router.post('/itinerary/generate-stay', async (req, res) => {
+    console.log(`\n[API ENTRY] POST /api/destinations/itinerary/generate-stay - dest:`, req.body.destinationId);
     try {
         const { sessionId, destinationId } = req.body;
         if (!sessionId || !destinationId) return res.status(400).json({ error: 'Missing sessionId or destinationId' });
@@ -477,7 +471,7 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
         const targetHotelBudget = userBudget * 0.30;
 
         const resolved = await resolveOrigin(session.departureCity);
-        console.log(`🛫 [HotelAPI lane] Origin resolved:`, JSON.stringify(resolved));
+        console.log(`🛫 [stay lane] Origin resolved:`, JSON.stringify(resolved));
 
         const { checkIn, checkOut } = getDatesForDuration(session.duration);
         const rooms = Math.ceil(session.travelers / 2);
@@ -492,19 +486,19 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
             vibeScores: session.vibeScores ? Object.fromEntries(session.vibeScores) : {},
         };
 
-        console.log(`✈️  [HotelAPI lane] Firing hotel + flights in parallel for ${destination.name}...`);
-        const [hotelApiHotel, directFlights] = await Promise.all([
+        console.log(`✈️  [stay lane] Firing hotel + flights in parallel for ${destination.name}...`);
+        const [liveHotel, directFlights] = await Promise.all([
             searchHotels(destination.name, checkIn, checkOut, rooms, totalPax, targetHotelBudget, userPreferences)
-                .catch(err => { console.warn(`⚠️ HotelAPI Hotels failed: ${err.message}`); return null; }),
+                .catch(err => { console.warn(`⚠️ SerpApi hotels failed: ${err.message}`); return null; }),
             getLiveFlights(resolved.originCode, destination.name, checkIn, checkOut, adultCount, childCount, targetFlightBudget)
-                .catch(err => { console.warn(`⚠️ HotelAPI Flights failed: ${err.message}`); return null; }),
+                .catch(err => { console.warn(`⚠️ SerpApi flights failed: ${err.message}`); return null; }),
         ]);
 
         // Hotel
-        if (hotelApiHotel) {
-            adjusted.hotel = hotelApiHotel;
-            if (hotelApiHotel.totalCost) adjusted.breakdown.stay = hotelApiHotel.totalCost;
-            console.log(`✅ [HotelAPI lane] Hotel: ${hotelApiHotel.name}`);
+        if (liveHotel) {
+            adjusted.hotel = liveHotel;
+            if (liveHotel.totalCost) adjusted.breakdown.stay = liveHotel.totalCost;
+            console.log(`✅ [stay lane] Hotel: ${liveHotel.name}`);
         }
 
         // Smart multi-leg flight routing
@@ -512,10 +506,10 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
         if (finalFlights && finalFlights.length > 0) {
             adjusted.flights = finalFlights;
             adjusted.breakdown.flights = finalFlights.reduce((s, f) => s + (f.cost || 0), 0);
-            console.log(`✅ [HotelAPI lane] Direct flights from ${resolved.originCode}: ${finalFlights.length}`);
+            console.log(`✅ [stay lane] Direct flights from ${resolved.originCode}: ${finalFlights.length}`);
         } else {
             const hubCode = resolved.needsConnection ? 'DEL' : 'DEL';
-            console.log(`⚠️ [HotelAPI lane] No direct flights — trying DEL fallback...`);
+            console.log(`⚠️ [stay lane] No direct flights — trying DEL fallback...`);
             const hubFlights = await getLiveFlights('DEL', destination.name, checkIn, checkOut, adultCount, childCount, targetFlightBudget)
                 .catch(err => { console.warn(`⚠️ DEL fallback failed: ${err.message}`); return null; });
 
@@ -533,18 +527,18 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
                 finalFlights = [domesticOut, ...hubFlights, domesticRet];
                 adjusted.flights = finalFlights;
                 adjusted.breakdown.flights = finalFlights.reduce((s, f) => s + (f.cost || 0), 0);
-                console.log(`✅ [HotelAPI lane] Multi-leg injected via DEL`);
+                console.log(`✅ [stay lane] Multi-leg injected via DEL`);
             } else {
-                console.log(`⚠️ [HotelAPI lane] HotelAPI flights unavailable — using seed data`);
+                console.log(`⚠️ [stay lane] SerpApi flights unavailable — using seed data`);
             }
         }
 
-        // ── ENFORCE STRICT BUDGET CEILING FOR HotelAPI ──
-        const maxAllowedForHotelApi = userBudget - (userBudget * 0.20); // 80% of budget reserved for flight+hotel+transfers
-        let currentHotelApiSum = (adjusted.breakdown.flights || 0) + (adjusted.breakdown.stay || 0) + (adjusted.breakdown.transfers || 0);
+        // ── ENFORCE STRICT BUDGET CEILING ──
+        const maxAllowedForTrip = userBudget - (userBudget * 0.20); // 80% of budget reserved for flight+hotel+transfers
+        let currentTripSum = (adjusted.breakdown.flights || 0) + (adjusted.breakdown.stay || 0) + (adjusted.breakdown.transfers || 0);
 
-        if (currentHotelApiSum > maxAllowedForHotelApi) {
-             const excess = currentHotelApiSum - maxAllowedForHotelApi + 1500; // Add small buffer so it falls comfortably under
+        if (currentTripSum > maxAllowedForTrip) {
+             const excess = currentTripSum - maxAllowedForTrip + 1500; // Add small buffer so it falls comfortably under
              const flightRatio = adjusted.breakdown.flights / ((adjusted.breakdown.flights || 1) + (adjusted.breakdown.stay || 1));
              const stayRatio = 1 - flightRatio;
              
@@ -566,7 +560,7 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
 
         adjusted.totalCost = Object.values(adjusted.breakdown).reduce((a, b) => a + b, 0);
 
-        console.log(`✅ [HotelAPI lane] Done for ${destination.name}`);
+        console.log(`✅ [stay lane] Done for ${destination.name}`);
         res.json({
             hotel: adjusted.hotel,
             flights: adjusted.flights,
@@ -576,8 +570,8 @@ router.post('/itinerary/generate-hotelApi', async (req, res) => {
             budget: userBudget,
         });
     } catch (err) {
-        console.error('generate-hotelApi error:', err);
-        res.status(500).json({ error: 'Failed to generate HotelAPI itinerary data' });
+        console.error('generate-stay error:', err);
+        res.status(500).json({ error: 'Failed to generate live stay data' });
     }
 });
 

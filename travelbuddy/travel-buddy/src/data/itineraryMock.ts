@@ -1,4 +1,4 @@
-// Comprehensive itinerary data matching HotelAPI spec
+// Seed itinerary data, used until live hotels and flights arrive
 
 export interface ItineraryActivity {
   time: string;

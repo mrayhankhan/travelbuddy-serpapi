@@ -547,9 +547,9 @@ export default function SessionInit({
         <ArrowRight className="w-4 h-4" />
       </motion.button>
 
-      {/* HotelAPI branding */}
+      {/* source line */}
       <p className="text-center text-[10px] text-[#8E8E93]/60 mt-3">
-        Powered by HotelAPI Inventory
+        Live hotels & flights via SerpApi
       </p>
     </div>
   );
