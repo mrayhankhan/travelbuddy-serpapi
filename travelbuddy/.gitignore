@@ -23,3 +23,8 @@ server/parse-*.js
 .next/
 dist/
 build/
+
+# The server's manifest was ignored by the line above and so never committed;
+# without it the server cannot be installed.
+!server/package.json
+!server/package-lock.json
