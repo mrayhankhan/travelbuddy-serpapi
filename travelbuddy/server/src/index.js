@@ -55,8 +55,12 @@ try {
     validateGeminiConfig();
     console.log('✅ Vertex AI configured (VERTEX_API_KEY, VERTEX_PROJECT_ID, VERTEX_LOCATION)');
 } catch (err) {
-    console.error('❌ Gemini configuration error:', err.message);
-    process.exit(1);
+    // Every route that uses Gemini already catches its own failure and falls
+    // back to the built-in seed data, so a missing key should not stop the
+    // server: it only turns off AI-written itineraries, explanations, the chat
+    // assistant and photo analysis.
+    console.warn('⚠️  Gemini is not configured:', err.message);
+    console.warn('    AI-written itineraries, the chatbot and photo analysis are off; everything else runs.');
 }
 
 mongoose.connect(MONGODB_URI)
