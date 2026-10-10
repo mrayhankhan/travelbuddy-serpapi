@@ -17,15 +17,20 @@ export default function SwipeCard({
   data,
   isWishlisted,
   onSwipe,
+  canSwipe,
 }: {
   data: SwipeCardData;
   isWishlisted?: boolean;
   onSwipe: (direction: 'left' | 'right' | 'up' | 'down') => void;
+  /** Asked before a card flies off. False means the deck is still settling the
+   *  previous swipe (or changing phase), so the card springs back instead. */
+  canSwipe?: () => boolean;
 }) {
   //
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const controls = useAnimation();
+  const cardRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(false);
   // FIX 7: Prevent onSwipe from firing multiple times per gesture
   const swipeFiredRef = useRef(false);
@@ -47,11 +52,59 @@ export default function SwipeCard({
   const expandOpacity = useTransform(y, [0, 60], [0, 1]);
   const saveOpacity = useTransform(y, [-60, 0], [1, 0]);
 
+  const snapBack = useCallback(() => {
+    if (cardRef.current) cardRef.current.style.pointerEvents = '';
+    try {
+      controls.start({
+        x: 0, y: 0, scale: 1, opacity: 1,
+        transition: { type: 'spring', mass: 0.6, stiffness: 280, damping: 24 },
+      });
+    } catch {
+      /* the card unmounted first: nothing to bring back */
+    }
+  }, [controls]);
+
+  // Fly the card off. Once it is on its way it cannot be grabbed again (a second
+  // drag would interrupt the animation and its completion would never fire),
+  // and the exit is bounded in time so the swipe is always reported.
+  const fly = useCallback(async (target: Record<string, unknown>, seconds: number) => {
+    if (cardRef.current) cardRef.current.style.pointerEvents = 'none';
+    const flight = (async () => {
+      try {
+        await controls.start({ ...target, transition: { duration: seconds, ease: [0.32, 0.72, 0, 1] } });
+      } catch {
+        /* unmounted mid-flight: the deck has already moved on */
+      }
+    })();
+    await Promise.race([flight, new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 150))]);
+  }, [controls]);
+
+  // Called once a card has flown off. If the deck did not take the card (it
+  // ignores swipes while it settles the last one or changes phase), this one is
+  // still mounted a moment later: bring it back rather than leave an invisible
+  // card on top of the deck.
+  const finishExit = useCallback((dir: 'left' | 'right') => {
+    if (!isMountedRef.current) return;
+    onSwipe(dir);
+    setTimeout(() => {
+      if (!isMountedRef.current) return;
+      swipeFiredRef.current = false;
+      snapBack();
+    }, 700);
+  }, [onSwipe, snapBack]);
+
   const handleDragEnd = useCallback(async (_: any, info: PanInfo) => {
     if (!isMountedRef.current || swipeFiredRef.current) return;
     const { offset, velocity } = info;
     const absX = Math.abs(offset.x);
     const absY = Math.abs(offset.y);
+
+    // A horizontal flick the deck is not ready for: spring back, do not fly off.
+    const flicked = absX > absY && (Math.abs(offset.x) > 80 || Math.abs(velocity.x) > 400);
+    if (flicked && canSwipe && !canSwipe()) {
+      snapBack();
+      return;
+    }
 
     // Determine dominant axis
     if (absX > absY) {
@@ -61,27 +114,15 @@ export default function SwipeCard({
         // Velocity-aware exit: faster flick → faster exit
         const exitSpeed = Math.min(0.35, Math.max(0.15, 300 / (Math.abs(velocity.x) + 200)));
         const yDrift = velocity.y * 0.15; // natural arc from gesture direction
-        await controls.start({
-          x: 500,
-          y: yDrift,
-          scale: 0.85,
-          opacity: 0,
-          transition: { duration: exitSpeed, ease: [0.32, 0.72, 0, 1] },
-        });
-        if (isMountedRef.current) onSwipe('right');
+        await fly({ x: 500, y: yDrift, scale: 0.85, opacity: 0 }, exitSpeed);
+        finishExit('right');
         return;
       } else if (offset.x < -80 || velocity.x < -400) {
         swipeFiredRef.current = true;
         const exitSpeed = Math.min(0.35, Math.max(0.15, 300 / (Math.abs(velocity.x) + 200)));
         const yDrift = velocity.y * 0.15;
-        await controls.start({
-          x: -500,
-          y: yDrift,
-          scale: 0.85,
-          opacity: 0,
-          transition: { duration: exitSpeed, ease: [0.32, 0.72, 0, 1] },
-        });
-        if (isMountedRef.current) onSwipe('left');
+        await fly({ x: -500, y: yDrift, scale: 0.85, opacity: 0 }, exitSpeed);
+        finishExit('left');
         return;
       }
     } else {
@@ -110,27 +151,32 @@ export default function SwipeCard({
       x: 0, y: 0,
       transition: { type: 'spring', mass: 0.6, stiffness: 280, damping: 24 },
     });
-  }, [controls, onSwipe]);
+  }, [controls, onSwipe, canSwipe, snapBack, finishExit, fly]);
 
   const triggerSwipe = useCallback((dir: 'left' | 'right') => {
     if (!isMountedRef.current || swipeFiredRef.current) return;
+    if (canSwipe && !canSwipe()) return;
     swipeFiredRef.current = true;
     const xTarget = dir === 'right' ? 500 : -500;
-    controls.start({
-      x: xTarget,
-      y: 30,
-      scale: 0.88,
-      opacity: 0,
-      transition: { duration: 0.32, ease: [0.32, 0.72, 0, 1] },
-    });
-    setTimeout(() => {
-      if (isMountedRef.current) onSwipe(dir);
-    }, 220);
-  }, [controls, onSwipe]);
+    if (cardRef.current) cardRef.current.style.pointerEvents = 'none';
+    try {
+      controls.start({
+        x: xTarget,
+        y: 30,
+        scale: 0.88,
+        opacity: 0,
+        transition: { duration: 0.32, ease: [0.32, 0.72, 0, 1] },
+      });
+    } catch {
+      /* unmounted first */
+    }
+    setTimeout(() => finishExit(dir), 220);
+  }, [controls, canSwipe, finishExit]);
 
   return (
     <div className="absolute top-3 left-3 right-3 bottom-24" style={{ perspective: 800 }}>
       <motion.div
+        ref={cardRef}
         drag
         dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={0.6}

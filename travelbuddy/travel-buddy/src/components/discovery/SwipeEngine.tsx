@@ -192,6 +192,23 @@ export default function SwipeEngine({
   const [cards, setCards] = useState<DiscoveryCard[]>(
     [...PHASE_CARDS[(firstPhase ?? "vibes") as Phase]],
   );
+  // The deck is also kept in a ref so the next deck can be worked out once,
+  // outside React. Doing it inside a setState updater was wrong: React runs
+  // updaters twice in development, and this one marks cards as seen as a side
+  // effect, so every swipe quietly used up two cards from the pool.
+  const cardsRef = useRef<DiscoveryCard[]>(cards);
+  const commitCards = useCallback(
+    (
+      next: DiscoveryCard[] | ((prev: DiscoveryCard[]) => DiscoveryCard[]),
+    ) => {
+      const raw = typeof next === "function" ? next(cardsRef.current) : next;
+      // One card per id: the deck is keyed by id, and a repeat breaks the stack.
+      const value = raw.filter((c, i) => raw.findIndex((d) => d.id === c.id) === i);
+      cardsRef.current = value;
+      setCards(value);
+    },
+    [],
+  );
   const [preferences, setPreferences] = useState({
     likedVibes: [] as string[],
     likedActivities: [] as string[],
@@ -358,7 +375,7 @@ export default function SwipeEngine({
     const pool = PHASE_CARDS[phase];
     const randomIndex = Math.floor(Math.random() * pool.length);
     const firstCard = [pool[randomIndex]];
-    setCards(firstCard);
+    commitCards(firstCard);
     seenCardIdsRef.current = new Set(firstCard.map((c) => c.id));
 
     // Reset per-phase counters
@@ -383,7 +400,7 @@ export default function SwipeEngine({
         .then((apiCards) => {
           if (isAdvancingRef.current) return; // FIX 5: Don't inject if advancing
           if (apiCards && apiCards.length > 0 && totalSwipedRef.current === 0) {
-            setCards(apiCards);
+            commitCards(apiCards);
             seenCardIdsRef.current = new Set(apiCards.map((c) => c.id));
           }
         })
@@ -473,7 +490,7 @@ export default function SwipeEngine({
 
       // ── Hard cap reached → advance phase ──
       if (swiped >= currentMax) {
-        setCards([]);
+        commitCards([]);
         advancePhase();
         return;
       }
@@ -481,7 +498,7 @@ export default function SwipeEngine({
       // FIX 3: Flush any pending cards from the buffer before computing next batch
       const pendingFlush = pendingCardsRef.current.splice(0);
 
-      setCards((prev) => {
+      commitCards((prev) => {
         // Remove the swiped card
         let filtered = prev.filter((c) => c.id !== card.id);
 
@@ -548,8 +565,38 @@ export default function SwipeEngine({
           });
       }
     },
-    [phase, sessionId, advancePhase, rankCardsByRelevance],
+    [phase, sessionId, advancePhase, rankCardsByRelevance, commitCards],
   );
+
+  // Safety net: the deck must never sit empty while the phase is still going.
+  // If a swipe race ever leaves it empty (and nothing is advancing), refill it
+  // from whatever is buffered or unseen, and move on if the pool is exhausted.
+  useEffect(() => {
+    if (cards.length > 0 || transitioning || showDuel || allSkipped) return;
+    if (isAdvancingRef.current) return;
+    const t = setTimeout(() => {
+      if (cardsRef.current.length > 0 || isAdvancingRef.current) return;
+      const seen = seenCardIdsRef.current;
+      const buffered = pendingCardsRef.current
+        .splice(0)
+        .filter((c) => !seen.has(c.id));
+      if (buffered.length > 0) {
+        buffered.forEach((c) => seen.add(c.id));
+        commitCards(buffered);
+        return;
+      }
+      const unseen = PHASE_CARDS[phase].filter((c) => !seen.has(c.id));
+      if (unseen.length > 0) {
+        const [next] = rankCardsByRelevance(unseen);
+        seen.add(next.id);
+        commitCards([next]);
+        return;
+      }
+      advancePhase();
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, transitioning, showDuel, phase]);
 
   // ── Consecutive-dislike duel trigger ──
   const triggerDislikeDuel = useCallback(() => {
@@ -600,7 +647,7 @@ export default function SwipeEngine({
         }
 
         // Re-sort current card stack by updated relevance
-        setCards((prev) => rankCardsByRelevance(prev));
+        commitCards((prev) => rankCardsByRelevance(prev));
       }
 
       // Send to backend
@@ -838,7 +885,7 @@ export default function SwipeEngine({
     if (isAdvancingRef.current || transitioning) return;
 
     // FIX 4: Re-insert card at the FRONT (top of stack, since slice(-3) renders last 3)
-    setCards((prev) => {
+    commitCards((prev) => {
       // Guard: don't add duplicate
       if (prev.some((c) => c.id === last.card.id)) return prev;
       return [...prev, last.card];
@@ -1200,6 +1247,7 @@ export default function SwipeEngine({
                     data={card as any}
                     isWishlisted={wishlist.includes(card.id)}
                     onSwipe={(dir) => handleSwipe(dir, card)}
+                    canSwipe={() => !isAdvancingRef.current && !isAnimatingRef.current}
                   />
                 ) : (
                   <div className="absolute inset-3 rounded-[32px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] overflow-hidden pointer-events-none">
